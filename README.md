@@ -2,7 +2,7 @@
 
 Smartphone-first live chart for Binance USD-M Futures USDT pairs. BUY marks a confirmed swing bottom and SELL marks a confirmed swing top, using an ATR-adaptive zigzag.
 
-**Live:** https://dedkovic441-hub.github.io/zigzag-swing/
+**Live:** https://akunkuhoki168-codex.github.io/zigzag-swing/
 
 - Default symbol: PUMP/USDT (last choice is remembered)
 - Coin list from USD-M Futures `exchangeInfo` (TRADING USDT), with live futures prices

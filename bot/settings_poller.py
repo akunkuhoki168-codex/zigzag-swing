@@ -3,7 +3,7 @@
 
 The static GitHub Pages dashboard writes control/settings.json (via the
 GitHub Contents API) or opens a 'settings:' issue in
-dedkovic441-hub/zigzag-swing-dashboard. This process, started by the
+akunkuhoki168-codex/zigzag-swing-dashboard. This process, started by the
 bot supervisor, fetches those with the box's `gh` login, validates them,
 updates bot/config.yaml (gitignored), and restarts signal_bot.py through
 the existing supervisor only when values actually change.
@@ -21,6 +21,8 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -34,9 +36,9 @@ import paper_engine as pe  # noqa: E402
 
 log = logging.getLogger("settings_poller")
 
-REPO = "dedkovic441-hub/zigzag-swing-dashboard"
+REPO = "akunkuhoki168-codex/zigzag-swing-dashboard"
 SETTINGS_PATH = "control/settings.json"
-OWNER = "dedkovic441-hub"
+OWNER = "akunkuhoki168-codex"
 CONFIG_PATH = ROOT / "bot" / "config.yaml"
 PID_FILE = ROOT / "run" / "settings_poller.pid"
 APPLIED_PATH = ROOT / "run" / "settings_applied.json"
@@ -444,12 +446,45 @@ def restart_bot() -> bool:
 
 
 def _gh(args: list[str], timeout: int = 40) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    token = env.get("GH_TOKEN") or env.get("GITHUB_TOKEN") or env.get("GH_TOKEN_NEW")
+    if token:
+        env["GH_TOKEN"] = token
     return subprocess.run(
         ["gh", *args],
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=env,
     )
+
+
+def _settings_from_obj(obj: dict, sha: Optional[str], source: str) -> dict:
+    settings = validate_settings(obj)
+    updated = _parse_dt(obj.get("updated_utc") or obj.get("updated_wib")) or now_utc()
+    return {
+        "settings": settings,
+        "sha": sha,
+        "updated": updated,
+        "source": source,
+        "raw": obj,
+    }
+
+
+def _fetch_settings_file_public() -> Optional[dict]:
+    """Read control/settings.json from the public raw URL (no GitHub auth)."""
+    url = f"https://raw.githubusercontent.com/{REPO}/main/{SETTINGS_PATH}"
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "atr-zigzag-settings-poller", "Accept": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            obj = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise RuntimeError(f"public settings.json: {e}") from e
+    return _settings_from_obj(obj, sha=None, source="file")
 
 
 def fetch_settings_file() -> Optional[dict]:
@@ -463,20 +498,13 @@ def fetch_settings_file() -> Optional[dict]:
         err = (proc.stderr or proc.stdout or "")[:400]
         if "404" in err or "Not Found" in err:
             return None
-        raise RuntimeError(f"gh contents: {err}")
+        log.warning("gh contents failed: %s; trying public URL", err[:200])
+        return _fetch_settings_file_public()
     data = json.loads(proc.stdout)
     raw = data.get("content") or ""
     decoded = base64.b64decode(raw.replace("\n", "")).decode("utf-8")
     obj = json.loads(decoded)
-    settings = validate_settings(obj)
-    updated = _parse_dt(obj.get("updated_utc") or obj.get("updated_wib")) or now_utc()
-    return {
-        "settings": settings,
-        "sha": data.get("sha"),
-        "updated": updated,
-        "source": "file",
-        "raw": obj,
-    }
+    return _settings_from_obj(obj, data.get("sha"), "file")
 
 
 def fetch_settings_issues() -> list[dict]:

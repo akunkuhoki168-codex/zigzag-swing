@@ -2,6 +2,10 @@
 # Auto-restart wrapper for the Zigzag Swing alert bot (signal_bot.py).
 # Does not start Telegram unless those env vars are already set; we pass --no-telegram.
 set -u
+# Use the new-account token for `gh` when present; never print it.
+if [ -z "${GH_TOKEN:-}" ] && [ -n "${GH_TOKEN_NEW:-}" ]; then
+  export GH_TOKEN="$GH_TOKEN_NEW"
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 1
 mkdir -p "$ROOT/run"
